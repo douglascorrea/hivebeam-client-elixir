@@ -62,8 +62,8 @@ defmodule HivebeamClient.Transport.WS do
 
     case state.session_key do
       key when is_binary(key) and key != "" ->
-        frame = attach_frame(key, state.after_seq)
-        {:reply, {:text, encode(frame)}, state}
+        send(self(), {:ws_attach_on_connect, key, state.after_seq})
+        {:ok, state}
 
       _ ->
         {:ok, state}
@@ -109,6 +109,21 @@ defmodule HivebeamClient.Transport.WS do
   def handle_cast(:ping, state) do
     {:reply, {:text, encode(%{"type" => "ping"})}, state}
   end
+
+  @impl true
+  def handle_info({:ws_attach_on_connect, gateway_session_key, after_seq}, state)
+      when is_binary(gateway_session_key) and is_integer(after_seq) do
+    frame = attach_frame(gateway_session_key, after_seq)
+
+    {:reply, {:text, encode(frame)},
+     %{
+       state
+       | session_key: gateway_session_key,
+         after_seq: normalize_after_seq(after_seq, state.after_seq)
+     }}
+  end
+
+  def handle_info(_message, state), do: {:ok, state}
 
   @impl true
   def handle_frame({:text, payload}, state) do

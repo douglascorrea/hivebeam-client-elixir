@@ -55,4 +55,33 @@ defmodule HivebeamClient.Transport.WsTest do
              "after_seq" => 4
            }
   end
+
+  test "handle_connect schedules attach and sends frame via handle_info" do
+    config = Config.new!(base_url: "http://127.0.0.1:8080", token: "t")
+
+    state = %{
+      owner: self(),
+      config: config,
+      session_key: "hbs_3",
+      after_seq: 7,
+      reconnect_ms: 100
+    }
+
+    assert {:ok, connected_state} = WS.handle_connect(nil, state)
+    assert connected_state == state
+    assert_receive {:hivebeam_ws, :connected, %{transport: :ws}}
+    assert_receive {:ws_attach_on_connect, "hbs_3", 7}
+
+    assert {:reply, {:text, frame}, next_state} =
+             WS.handle_info({:ws_attach_on_connect, "hbs_3", 7}, connected_state)
+
+    assert next_state.session_key == "hbs_3"
+    assert next_state.after_seq == 7
+
+    assert Jason.decode!(frame) == %{
+             "type" => "attach",
+             "gateway_session_key" => "hbs_3",
+             "after_seq" => 7
+           }
+  end
 end

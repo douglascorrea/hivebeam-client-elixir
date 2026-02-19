@@ -8,6 +8,8 @@ defmodule HivebeamClient.Session do
   alias HivebeamClient.Transport.HTTP
   alias HivebeamClient.Transport.WS
 
+  @default_call_timeout_ms 30_000
+
   @type state :: %{
           owner: pid(),
           config: Config.t(),
@@ -35,41 +37,42 @@ defmodule HivebeamClient.Session do
 
   @spec create_session(GenServer.server(), map()) :: {:ok, map()} | {:error, Error.t()}
   def create_session(server, attrs \\ %{}) when is_map(attrs) do
-    GenServer.call(server, {:create_session, attrs})
+    GenServer.call(server, {:create_session, attrs}, @default_call_timeout_ms)
   end
 
   @spec attach(GenServer.server(), String.t() | keyword()) :: {:ok, map()} | {:error, Error.t()}
-  def attach(server, arg), do: GenServer.call(server, {:attach, arg})
+  def attach(server, arg), do: GenServer.call(server, {:attach, arg}, @default_call_timeout_ms)
 
   @spec prompt(GenServer.server(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Error.t()}
   def prompt(server, request_id, text, opts \\ [])
       when is_binary(request_id) and is_binary(text) and is_list(opts) do
-    GenServer.call(server, {:prompt, request_id, text, opts})
+    timeout_ms = prompt_call_timeout(opts)
+    GenServer.call(server, {:prompt, request_id, text, opts}, timeout_ms)
   end
 
   @spec cancel(GenServer.server(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def cancel(server, opts \\ []) when is_list(opts) do
-    GenServer.call(server, {:cancel, opts})
+    GenServer.call(server, {:cancel, opts}, call_timeout(opts))
   end
 
   @spec approve(GenServer.server(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Error.t()}
   def approve(server, approval_ref, decision, opts \\ [])
       when is_binary(approval_ref) and is_binary(decision) and is_list(opts) do
-    GenServer.call(server, {:approve, approval_ref, decision, opts})
+    GenServer.call(server, {:approve, approval_ref, decision, opts}, call_timeout(opts))
   end
 
   @spec close(GenServer.server(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def close(server, opts \\ []) when is_list(opts) do
-    GenServer.call(server, {:close, opts})
+    GenServer.call(server, {:close, opts}, call_timeout(opts))
   end
 
   @spec fetch_events(GenServer.server(), integer(), pos_integer()) ::
           {:ok, map()} | {:error, Error.t()}
   def fetch_events(server, after_seq, limit)
       when is_integer(after_seq) and is_integer(limit) and limit > 0 do
-    GenServer.call(server, {:fetch_events, after_seq, limit})
+    GenServer.call(server, {:fetch_events, after_seq, limit}, @default_call_timeout_ms)
   end
 
   @impl true
@@ -417,6 +420,26 @@ defmodule HivebeamClient.Session do
   end
 
   defp maybe_ws_attach(state), do: state
+
+  defp prompt_call_timeout(opts) do
+    case call_timeout(opts) do
+      @default_call_timeout_ms ->
+        case Keyword.get(opts, :timeout_ms) do
+          value when is_integer(value) and value > 0 -> value + 5_000
+          _ -> @default_call_timeout_ms
+        end
+
+      timeout_ms ->
+        timeout_ms
+    end
+  end
+
+  defp call_timeout(opts) when is_list(opts) do
+    case Keyword.get(opts, :call_timeout_ms) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> @default_call_timeout_ms
+    end
+  end
 
   defp ensure_polling(%{ws_connected?: true} = state), do: cancel_poll_timer(state)
   defp ensure_polling(%{poll_timer_ref: ref} = state) when is_reference(ref), do: state
