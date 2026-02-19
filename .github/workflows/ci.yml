@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      HIVEBEAM_GATEWAY_REPO: ../hivebeam
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout gateway repo for contract/integration tests
+        run: git clone --depth 1 https://github.com/douglascorrea/hivebeam.git ../hivebeam
+
+      - name: Setup Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.2"
+          elixir-version: "1.19.4"
+
+      - name: Install deps
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Test
+        run: mix test

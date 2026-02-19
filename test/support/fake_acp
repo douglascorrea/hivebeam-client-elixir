@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+import json
+import sys
+import time
+
+
+session_counter = 0
+request_counter = 10_000
+cancel_requested = False
+
+
+def send(payload):
+    sys.stdout.write(json.dumps(payload) + "\n")
+    sys.stdout.flush()
+
+
+def send_result(req_id, result):
+    send({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+
+def send_error(req_id, code, message):
+    send({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
+
+
+def send_update(session_id, update):
+    send(
+        {
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {"session_id": session_id, "update": update},
+        }
+    )
+
+
+def next_request_id():
+    global request_counter
+    request_counter += 1
+    return request_counter
+
+
+def read_message():
+    line = sys.stdin.readline()
+    if line == "":
+        return None
+
+    line = line.strip()
+    if line == "":
+        return {}
+
+    try:
+        return json.loads(line)
+    except Exception:
+        return {}
+
+
+def extract_prompt_text(params):
+    prompt = params.get("prompt")
+    if isinstance(prompt, str):
+        return prompt
+
+    if isinstance(prompt, list):
+        chunks = []
+        for item in prompt:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                chunks.append(item["text"])
+        return " ".join(chunks)
+
+    return ""
+
+
+def handle_control_message(message):
+    global cancel_requested
+
+    if not isinstance(message, dict):
+        return
+
+    method = message.get("method")
+    req_id = message.get("id")
+
+    if method == "session/cancel":
+        cancel_requested = True
+        if req_id is not None:
+            send_result(req_id, {})
+        return
+
+    if method is not None and req_id is not None:
+        send_error(req_id, -32601, f"unsupported method: {method}")
+
+
+def wait_for_response(wait_id, timeout_s=60):
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        message = read_message()
+        if message is None:
+            return None
+
+        if not isinstance(message, dict):
+            continue
+
+        if message.get("id") == wait_id and (
+            "result" in message or "error" in message
+        ):
+            return message
+
+        if "method" in message:
+            handle_control_message(message)
+
+    return None
+
+
+def approval_allowed(session_id):
+    request_id = next_request_id()
+    request_payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "session/request_permission",
+        "params": {
+            "session_id": session_id,
+            "tool_call": {"name": "fake_tool"},
+            "options": [
+                {"option_id": "allow_once", "name": "Allow once", "kind": "allow_once"},
+                {"option_id": "deny_once", "name": "Deny once", "kind": "reject_once"},
+            ],
+        },
+    }
+    send(request_payload)
+    response = wait_for_response(request_id, timeout_s=60)
+    if not isinstance(response, dict):
+        return False
+
+    result = response.get("result", {})
+    outcome = result.get("outcome", {})
+    option_id = outcome.get("optionId", "")
+    return isinstance(option_id, str) and "allow" in option_id
+
+
+def handle_prompt(req_id, params):
+    global cancel_requested
+    cancel_requested = False
+
+    session_id = params.get("sessionId") or params.get("session_id") or "fake-session"
+    prompt_text = extract_prompt_text(params).lower()
+
+    send_update(
+        session_id,
+        {"type": "agent_message_chunk", "text": "fake-acp: received prompt"},
+    )
+
+    if "approval" in prompt_text:
+        send_update(
+            session_id,
+            {"type": "agent_message_chunk", "text": "fake-acp: waiting approval"},
+        )
+        allowed = approval_allowed(session_id)
+        if not allowed:
+            send_update(
+                session_id,
+                {"type": "agent_message_chunk", "text": "fake-acp: approval denied"},
+            )
+            send_result(req_id, {"stopReason": "cancelled"})
+            return
+
+    if cancel_requested:
+        send_result(req_id, {"stopReason": "cancelled"})
+        return
+
+    send_update(
+        session_id,
+        {"type": "agent_message_chunk", "text": "fake-acp: prompt complete"},
+    )
+    send_result(req_id, {"stopReason": "done", "sessionId": session_id})
+
+
+def main():
+    global session_counter
+
+    while True:
+        message = read_message()
+        if message is None:
+            return
+
+        if not isinstance(message, dict):
+            continue
+
+        if "method" in message:
+            method = message.get("method")
+            req_id = message.get("id")
+            params = message.get("params", {})
+
+            if method == "initialize" and req_id is not None:
+                send_result(req_id, {"protocolVersion": 1})
+                continue
+
+            if method == "session/new" and req_id is not None:
+                session_counter += 1
+                session_id = f"fake-session-{session_counter}"
+                send_result(req_id, {"sessionId": session_id})
+                continue
+
+            if method == "session/prompt" and req_id is not None:
+                handle_prompt(req_id, params)
+                continue
+
+            if method == "session/cancel":
+                handle_control_message(message)
+                continue
+
+            if req_id is not None:
+                send_error(req_id, -32601, f"unsupported method: {method}")
+            continue
+
+        # Ignore response messages not initiated by fake ACP.
+
+
+if __name__ == "__main__":
+    main()
