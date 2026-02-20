@@ -67,6 +67,9 @@
               }
             }
           },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
           "500": {
             "$ref": "#/components/responses/Error"
           }
@@ -241,6 +244,12 @@
           "422": {
             "$ref": "#/components/responses/Error"
           },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
           "404": {
             "$ref": "#/components/responses/Error"
           },
@@ -283,6 +292,9 @@
             }
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
             "$ref": "#/components/responses/Error"
           },
           "500": {
@@ -334,6 +346,9 @@
             "$ref": "#/components/responses/Error"
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
             "$ref": "#/components/responses/Error"
           },
           "500": {
@@ -458,6 +473,9 @@
           "approval_mode": {
             "type": "string",
             "enum": ["ask", "allow", "deny"]
+          },
+          "dangerously": {
+            "type": "boolean"
           },
           "client_session_ref": {
             "type": "string"
