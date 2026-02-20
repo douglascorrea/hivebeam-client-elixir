@@ -8,6 +8,7 @@ This repository is the Elixir client SDK for Hivebeam gateway `/v1` contracts.
 - Compile: `mix compile`
 - Run tests: `mix test`
 - Format check: `mix format --check-formatted`
+- Compile strict: `mix compile --warnings-as-errors`
 
 ## Editing expectations
 
@@ -31,3 +32,4 @@ When changing transport/session logic, run:
 
 - `mix test test/hivebeam_client/session_test.exs`
 - `mix test test/hivebeam_client/integration/session_integration_test.exs`
+- `mix compile --warnings-as-errors`

@@ -7,6 +7,15 @@ import time
 session_counter = 0
 request_counter = 10_000
 cancel_requested = False
+session_mode = {}
+
+AVAILABLE_MODES = [
+    {"id": "read-only"},
+    {"id": "full-access"},
+    {"id": "default"},
+    {"id": "dontAsk"},
+    {"id": "bypassPermissions"},
+]
 
 
 def send(payload):
@@ -172,7 +181,7 @@ def handle_prompt(req_id, params):
 
 
 def main():
-    global session_counter
+    global session_counter, session_mode
 
     while True:
         message = read_message()
@@ -194,7 +203,30 @@ def main():
             if method == "session/new" and req_id is not None:
                 session_counter += 1
                 session_id = f"fake-session-{session_counter}"
-                send_result(req_id, {"sessionId": session_id})
+                session_mode[session_id] = "read-only"
+                send_result(
+                    req_id,
+                    {
+                        "sessionId": session_id,
+                        "modes": {"availableModes": AVAILABLE_MODES},
+                    },
+                )
+                continue
+
+            if method == "session/set_mode" and req_id is not None:
+                session_id = params.get("sessionId") or params.get("session_id")
+                mode_id = params.get("modeId") or params.get("mode_id")
+
+                if (
+                    isinstance(session_id, str)
+                    and session_id != ""
+                    and isinstance(mode_id, str)
+                    and mode_id in [m.get("id") for m in AVAILABLE_MODES]
+                ):
+                    session_mode[session_id] = mode_id
+                    send_result(req_id, {"modeId": mode_id})
+                else:
+                    send_error(req_id, -32602, "invalid mode request")
                 continue
 
             if method == "session/prompt" and req_id is not None:

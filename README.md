@@ -57,3 +57,11 @@ The SDK forwards runtime messages to the owner process:
 ## Contracts
 
 Pinned gateway contract snapshot lives in `contracts/`.
+
+## Quality checks
+
+```bash
+mix format --check-formatted
+mix compile --warnings-as-errors
+mix test
+```
